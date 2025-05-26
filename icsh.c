@@ -12,11 +12,24 @@
 int main(int argc, char *argv[]) {
     char buffer[MAX_CMD_BUFFER];
     char last_command[MAX_CMD_BUFFER] = "";
+    int last_exit_status = 0;
+    FILE *input = stdin;
+
+    if (argc > 1) {
+        input = fopen(argv[1], "r");
+        if (!input) {
+            perror("Error opening file");
+            return 1;
+        }
+    }
+
     printf("Initializing IC Shell\n");
     while (1) {
-        printf("icsh $ ");
-        fflush(stdout);
-        if (fgets(buffer, MAX_CMD_BUFFER, stdin) == NULL) 
+        if (input == stdin) {
+            printf("icsh $ ");
+            fflush(stdout);
+        }
+        if (fgets(buffer, MAX_CMD_BUFFER, input) == NULL) 
         {
             break;
         }
@@ -52,12 +65,17 @@ int main(int argc, char *argv[]) {
             }
         
             printf("User has left the shell\n");
+            last_exit_status = status;
             exit(status);
         
         } else if (strcmp(token, "echo") == 0) {
             token = strtok(NULL, " ");
             while (token != NULL) {
-                printf("%s", token);
+                if (strcmp(token, "$?") == 0) {
+                    printf("%d", last_exit_status);
+                } else {
+                    printf("%s", token);
+                }
                 char *next = strtok(NULL, " ");
                 if (next != NULL) {
                     printf(" ");
@@ -65,12 +83,12 @@ int main(int argc, char *argv[]) {
                 token = next;
             }
             printf("\n");
-        
+            last_exit_status = 0;
         } else {
             printf("bad command\n");
+            last_exit_status = 1;
         }
-        
-        // printf("you said that : %s\n", buffer);
     }
-
+    if (input != stdin) fclose(input);
+    return 0;
 }
