@@ -10,6 +10,7 @@
  #include "sys/types.h"
  #include "sys/wait.h"
  #include "signal.h"
+ #include "fcntl.h"
  
  #define MAX_CMD_BUFFER 255
  #define MAX_ARGS 64
@@ -76,16 +77,26 @@
          char *args[MAX_ARGS];
          int i = 0;
          char *token = strtok(buffer, " ");
+         if (token == NULL) continue;
  
-         if (token == NULL) {
-             continue;
-         }
+         char *input_file = NULL;
+         char *output_file = NULL;
  
          while (token != NULL && i < MAX_ARGS - 1) {
-             args[i++] = token;
+             if (strcmp(token, "<") == 0) {
+                 token = strtok(NULL, " ");
+                 if (token != NULL) input_file = token;
+             } else if (strcmp(token, ">") == 0) {
+                 token = strtok(NULL, " ");
+                 if (token != NULL) output_file = token;
+             } else {
+                 args[i++] = token;
+             }
              token = strtok(NULL, " ");
          }
          args[i] = NULL;
+ 
+         if (args[0] == NULL) continue;
  
          if (strcmp(args[0], "exit") == 0) {
              int status = 0;
@@ -103,9 +114,7 @@
                  } else {
                      printf("%s", args[j]);
                  }
-                 if (args[j + 1] != NULL) {
-                     printf(" ");
-                 }
+                 if (args[j + 1] != NULL) printf(" ");
              }
              printf("\n");
              last_exit_status = 0;
@@ -115,14 +124,37 @@
                  // Child process
                  signal(SIGINT, SIG_DFL);
                  signal(SIGTSTP, SIG_DFL);
+ 
+                 // Input redirection
+                 if (input_file != NULL) {
+                     int fd_in = open(input_file, O_RDONLY);
+                     if (fd_in < 0) {
+                         perror("Input redirection failed");
+                         exit(1);
+                     }
+                     dup2(fd_in, STDIN_FILENO);
+                     close(fd_in);
+                 }
+ 
+                 // Output redirection
+                 if (output_file != NULL) {
+                     int fd_out = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                     if (fd_out < 0) {
+                         perror("Output redirection failed");
+                         exit(1);
+                     }
+                     dup2(fd_out, STDOUT_FILENO);
+                     close(fd_out);
+                 }
+ 
                  execvp(args[0], args);
-                 perror("execvp failed");
+                 // Custom error message if execvp fails
+                 fprintf(stderr, "bad command\n");
                  exit(1);
              } else if (pid > 0) {
                  foreground_pid = pid;
                  int status;
-                 waitpid(pid, &status, WUNTRACED);  // Handle stopped processes too
- 
+                 waitpid(pid, &status, WUNTRACED);
                  if (WIFSTOPPED(status)) {
                      printf("\n[%d] suspended\n", pid);
                  } else {
